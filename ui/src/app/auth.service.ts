@@ -11,12 +11,21 @@ export class AuthService {
   public currentUser: Observable<any>;
 
   constructor(private http: HttpClient) {
-    this.currentUserSubject = new BehaviorSubject<any>(JSON.parse(localStorage.getItem('currentUser')));
+    this.currentUserSubject = new BehaviorSubject<any>(this.getUserFromStorage());
     this.currentUser = this.currentUserSubject.asObservable();
+  }
+
+  private getUserFromStorage(): any {
+    const token = localStorage.getItem('auth_token');
+    return token ? { token } : null;
   }
 
   public get currentUserValue() {
     return this.currentUserSubject.value;
+  }
+
+  public getToken(): string | null {
+    return localStorage.getItem('auth_token');
   }
 
   login(token: string) {
@@ -30,6 +39,13 @@ export class AuthService {
   }
 
   isLoggedIn(): boolean {
-    return !!localStorage.getItem('auth_token');
+    return !!this.getToken();
+  }
+
+  // Méthode pour vérifier la validité du token (à implémenter côté serveur)
+  verifyToken(): Observable<boolean> {
+    return this.http.get<boolean>('/api/verify-token', {
+      headers: { Authorization: `Bearer ${this.getToken()}` }
+    });
   }
 }
