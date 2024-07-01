@@ -19,8 +19,7 @@ RUN sed -i 's/\r$//g' docker-entrypoint.sh && \
     apk add --update ffmpeg aria2 coreutils shadow su-exec curl && \
     apk add --update --virtual .build-deps gcc g++ musl-dev && \
     pip install --no-cache-dir pipenv && \
-    pipenv install --system --ignore-pipfile && \
-    pip install PyJWT && \
+    pipenv install --system --deploy && \
     pip uninstall pipenv -y && \
     apk del .build-deps && \
     rm -rf /var/cache/apk/* && \
