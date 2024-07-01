@@ -1,5 +1,6 @@
+import { Component, ViewChild, ElementRef, AfterViewInit, OnInit } from '@angular/core';
+import { Router } from '@angular/router';
 import { AuthService } from './auth.service';
-import { Component, ViewChild, ElementRef, AfterViewInit } from '@angular/core';
 import { faTrashAlt, faCheckCircle, faTimesCircle, IconDefinition } from '@fortawesome/free-regular-svg-icons';
 import { faRedoAlt, faSun, faMoon, faCircleHalfStroke, faCheck, faExternalLinkAlt, faDownload } from '@fortawesome/free-solid-svg-icons';
 import { CookieService } from 'ngx-cookie-service';
@@ -9,14 +10,14 @@ import { Download, DownloadsService, Status } from './downloads.service';
 import { MasterCheckboxComponent } from './master-checkbox.component';
 import { Formats, Format, Quality } from './formats';
 import { Theme, Themes } from './theme';
-import {KeyValue} from "@angular/common";
+import { KeyValue } from "@angular/common";
 
 @Component({
   selector: 'app-root',
   templateUrl: './app.component.html',
   styleUrls: ['./app.component.sass'],
 })
-export class AppComponent implements AfterViewInit {
+export class AppComponent implements OnInit, AfterViewInit {
   addUrl: string;
   formats: Format[] = Formats;
   qualities: Quality[];
@@ -38,7 +39,6 @@ export class AppComponent implements AfterViewInit {
   @ViewChild('doneClearFailed') doneClearFailed: ElementRef;
   @ViewChild('doneRetryFailed') doneRetryFailed: ElementRef;
 
-
   faTrashAlt = faTrashAlt;
   faCheckCircle = faCheckCircle;
   faTimesCircle = faTimesCircle;
@@ -50,39 +50,22 @@ export class AppComponent implements AfterViewInit {
   faDownload = faDownload;
   faExternalLinkAlt = faExternalLinkAlt;
 
-constructor(
-  public downloads: DownloadsService, 
-  private cookieService: CookieService,
-  private authService: AuthService  
-) {
-  this.format = cookieService.get('metube_format') || 'any';
-  // Needs to be set or qualities won't automatically be set
-  this.setQualities()
-  this.quality = cookieService.get('metube_quality') || 'best';
-  this.autoStart = cookieService.get('metube_auto_start') !== 'false';
-
-  this.activeTheme = this.getPreferredTheme(cookieService);
-}
+  constructor(
+    public downloads: DownloadsService, 
+    private cookieService: CookieService,
+    private authService: AuthService,
+    private router: Router
+  ) {
+    this.format = cookieService.get('metube_format') || 'any';
+    this.setQualities();
+    this.quality = cookieService.get('metube_quality') || 'best';
+    this.autoStart = cookieService.get('metube_auto_start') !== 'false';
+    this.activeTheme = this.getPreferredTheme(cookieService);
+  }
 
   ngOnInit() {
-      if (!this.authService.isLoggedIn()) {
-    window.location.href = 'https://authentygoogle.onrender.com/auth/google';
-    return;
-  }
-  const urlParams = new URLSearchParams(window.location.search);
-  const token = urlParams.get('token');
-  if (token) {
-    this.authService.login(token);
-    window.history.replaceState({}, document.title, "/");
-  }
-    this.customDirs$ = this.getMatchingCustomDir();
-    this.setTheme(this.activeTheme);
-
-    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-      if (this.activeTheme.id === 'auto') {
-         this.setTheme(this.activeTheme);
-      }
-    });
+    this.handleAuthentication();
+    this.initializeApp();
   }
 
   ngAfterViewInit() {
@@ -104,15 +87,54 @@ constructor(
     });
   }
 
-  // workaround to allow fetching of Map values in the order they were inserted
-  //  https://github.com/angular/angular/issues/31420
+  private handleAuthentication() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const token = urlParams.get('token');
+    if (token) {
+      this.authService.login(token);
+      this.router.navigate(['/'], { replaceUrl: true });
+    } else if (!this.authService.isLoggedIn()) {
+      this.redirectToLogin();
+    } else {
+      this.verifyToken();
+    }
+  }
+
+  private verifyToken() {
+    this.authService.verifyToken().subscribe(
+      isValid => {
+        if (!isValid) {
+          this.redirectToLogin();
+        }
+      },
+      error => {
+        console.error('Erreur lors de la vérification du token', error);
+        this.redirectToLogin();
+      }
+    );
+  }
+
+  private redirectToLogin() {
+    window.location.href = 'https://authentygoogle.onrender.com/auth/google';
+  }
+
+  private initializeApp() {
+    this.customDirs$ = this.getMatchingCustomDir();
+    this.setTheme(this.activeTheme);
+
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+      if (this.activeTheme.id === 'auto') {
+         this.setTheme(this.activeTheme);
+      }
+    });
+  }
+
   asIsOrder(a, b) {
     return 1;
   }
 
   qualityChanged() {
     this.cookieService.set('metube_quality', this.quality, { expires: 3650 });
-    // Re-trigger custom directory change
     this.downloads.customDirsChanged.next(this.downloads.customDirs);
   }
 
@@ -131,9 +153,8 @@ constructor(
     return this.quality == 'audio' || this.format == 'mp3'  || this.format == 'm4a' || this.format == 'opus' || this.format == 'wav' || this.format == 'flac';
   }
 
-  getMatchingCustomDir() : Observable<string[]> {
+  getMatchingCustomDir(): Observable<string[]> {
     return this.downloads.customDirsChanged.asObservable().pipe(map((output) => {
-      // Keep logic consistent with app/ytdl.py
       if (this.isAudioType()) {
         console.debug("Showing audio-specific download directories");
         return output["audio_download_dir"];
@@ -149,7 +170,6 @@ constructor(
     if (cookieService.check('metube_theme')) {
       theme = cookieService.get('metube_theme');
     }
-
     return this.themes.find(x => x.id === theme) ?? this.themes.find(x => x.id === 'auto');
   }
 
@@ -169,9 +189,7 @@ constructor(
 
   formatChanged() {
     this.cookieService.set('metube_format', this.format, { expires: 3650 });
-    // Updates to use qualities available
-    this.setQualities()
-    // Re-trigger custom directory change
+    this.setQualities();
     this.downloads.customDirsChanged.next(this.downloads.customDirs);
   }
 
@@ -188,29 +206,39 @@ constructor(
   }
 
   setQualities() {
-    // qualities for specific format
-    this.qualities = this.formats.find(el => el.id == this.format).qualities
-    const exists = this.qualities.find(el => el.id === this.quality)
-    this.quality = exists ? this.quality : 'best'
+    this.qualities = this.formats.find(el => el.id == this.format).qualities;
+    const exists = this.qualities.find(el => el.id === this.quality);
+    this.quality = exists ? this.quality : 'best';
   }
 
   addDownload(url?: string, quality?: string, format?: string, folder?: string, customNamePrefix?: string, autoStart?: boolean) {
-    url = url ?? this.addUrl
-    quality = quality ?? this.quality
-    format = format ?? this.format
-    folder = folder ?? this.folder
-    customNamePrefix = customNamePrefix ?? this.customNamePrefix
-    autoStart = autoStart ?? this.autoStart
+    url = url ?? this.addUrl;
+    quality = quality ?? this.quality;
+    format = format ?? this.format;
+    folder = folder ?? this.folder;
+    customNamePrefix = customNamePrefix ?? this.customNamePrefix;
+    autoStart = autoStart ?? this.autoStart;
 
     console.debug('Downloading: url='+url+' quality='+quality+' format='+format+' folder='+folder+' customNamePrefix='+customNamePrefix+' autoStart='+autoStart);
     this.addInProgress = true;
-    this.downloads.add(url, quality, format, folder, customNamePrefix, autoStart).subscribe((status: Status) => {
-      if (status.status === 'error') {
-        alert(`Error adding URL: ${status.msg}`);
-      } else {
-        this.addUrl = '';
+    this.downloads.add(url, quality, format, folder, customNamePrefix, autoStart).subscribe({
+      next: (status: Status) => {
+        if (status.status === 'error') {
+          alert(`Error adding URL: ${status.msg}`);
+        } else {
+          this.addUrl = '';
+        }
+        this.addInProgress = false;
+      },
+      error: (error) => {
+        if (error.status === 401) {
+          console.error('Authentication error', error);
+          this.redirectToLogin();
+        } else {
+          alert(`Error adding URL: ${error.message}`);
+        }
+        this.addInProgress = false;
       }
-      this.addInProgress = false;
     });
   }
 
@@ -252,11 +280,9 @@ constructor(
     if (download.quality == 'audio' || download.filename.endsWith('.mp3')) {
       baseDir = this.downloads.configuration["PUBLIC_HOST_AUDIO_URL"];
     }
-
     if (download.folder) {
       baseDir += download.folder + '/';
     }
-
     return baseDir + encodeURIComponent(download.filename);
   }
 
@@ -265,7 +291,7 @@ constructor(
   }
   
   logout() {
-  this.authService.logout();
-  window.location.href = 'https://authentygoogle.onrender.com/auth/google';
-}
+    this.authService.logout();
+    this.redirectToLogin();
+  }
 }
