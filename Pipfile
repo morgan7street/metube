@@ -11,6 +11,7 @@ aiohttp = "*"
 python-socketio = "~=5.0"
 yt-dlp = "*"
 PyJWT = "*"
+aiohttp_middlewares = "*"
 
 [requires]
 python_version = "3.11"
