@@ -1,3 +1,4 @@
+import { AuthService } from './auth.service';
 import { Component, ViewChild, ElementRef, AfterViewInit } from '@angular/core';
 import { faTrashAlt, faCheckCircle, faTimesCircle, IconDefinition } from '@fortawesome/free-regular-svg-icons';
 import { faRedoAlt, faSun, faMoon, faCircleHalfStroke, faCheck, faExternalLinkAlt, faDownload } from '@fortawesome/free-solid-svg-icons';
@@ -49,17 +50,31 @@ export class AppComponent implements AfterViewInit {
   faDownload = faDownload;
   faExternalLinkAlt = faExternalLinkAlt;
 
-  constructor(public downloads: DownloadsService, private cookieService: CookieService) {
-    this.format = cookieService.get('metube_format') || 'any';
-    // Needs to be set or qualities won't automatically be set
-    this.setQualities()
-    this.quality = cookieService.get('metube_quality') || 'best';
-    this.autoStart = cookieService.get('metube_auto_start') !== 'false';
+constructor(
+  public downloads: DownloadsService, 
+  private cookieService: CookieService,
+  private authService: AuthService  
+) {
+  this.format = cookieService.get('metube_format') || 'any';
+  // Needs to be set or qualities won't automatically be set
+  this.setQualities()
+  this.quality = cookieService.get('metube_quality') || 'best';
+  this.autoStart = cookieService.get('metube_auto_start') !== 'false';
 
-    this.activeTheme = this.getPreferredTheme(cookieService);
-  }
+  this.activeTheme = this.getPreferredTheme(cookieService);
+}
 
   ngOnInit() {
+      if (!this.authService.isLoggedIn()) {
+    window.location.href = 'https://authentygoogle.onrender.com/auth/google';
+    return;
+  }
+  const urlParams = new URLSearchParams(window.location.search);
+  const token = urlParams.get('token');
+  if (token) {
+    this.authService.login(token);
+    window.history.replaceState({}, document.title, "/");
+  }
     this.customDirs$ = this.getMatchingCustomDir();
     this.setTheme(this.activeTheme);
 
@@ -248,4 +263,9 @@ export class AppComponent implements AfterViewInit {
   identifyDownloadRow(index: number, row: KeyValue<string, Download>) {
     return row.key;
   }
+  
+  logout() {
+  this.authService.logout();
+  window.location.href = 'https://authentygoogle.onrender.com/auth/google';
+}
 }
