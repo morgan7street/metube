@@ -8,6 +8,8 @@ import socketio
 import logging
 import json
 import pathlib
+import jwt
+from aiohttp_middlewares import cors_middleware, error_middleware
 
 from ytdl import DownloadQueueNotifier, DownloadQueue
 
@@ -33,17 +35,18 @@ class Config:
         'HOST': '0.0.0.0',
         'PORT': '8081',
         'BASE_DIR': '',
-        'DEFAULT_THEME': 'auto'
+        'DEFAULT_THEME': 'auto',
+        'JWT_SECRET': 'votre_secret_par_defaut'  # Ajouté pour l'authentification
     }
 
     _BOOLEAN = ('DOWNLOAD_DIRS_INDEXABLE', 'CUSTOM_DIRS', 'CREATE_CUSTOM_DIRS', 'DELETE_FILE_ON_TRASHCAN')
 
     def __init__(self):
         for k, v in self._DEFAULTS.items():
-            setattr(self, k, os.environ[k] if k in os.environ else v)
+            setattr(self, k, os.environ.get(k, v))
 
         for k, v in self.__dict__.items():
-            if v.startswith('%%'):
+            if isinstance(v, str) and v.startswith('%%'):
                 setattr(self, k, getattr(self, v[2:]))
             if k in self._BOOLEAN:
                 if v not in ('true', 'false', 'True', 'False', 'on', 'off', '1', '0'):
@@ -85,7 +88,29 @@ class ObjectSerializer(json.JSONEncoder):
             return json.JSONEncoder.default(self, obj)
 
 serializer = ObjectSerializer()
-app = web.Application()
+
+@web.middleware
+async def auth_middleware(request, handler):
+    if request.path.startswith(config.URL_PREFIX) and not request.path.endswith(('index.html', '.js', '.css')):
+        token = request.headers.get('Authorization')
+        if token:
+            try:
+                payload = jwt.decode(token.split(" ")[1], config.JWT_SECRET, algorithms=["HS256"])
+                request['user'] = payload
+            except jwt.PyJWTError:
+                return web.json_response({'error': 'Token invalide'}, status=401)
+        else:
+            return web.json_response({'error': 'Token manquant'}, status=401)
+    return await handler(request)
+
+app = web.Application(
+    middlewares=[
+        error_middleware(),
+        cors_middleware(origins=['*']),
+        auth_middleware
+    ]
+)
+
 sio = socketio.AsyncServer(cors_allowed_origins='*')
 sio.attach(app, socketio_path=config.URL_PREFIX + 'socket.io')
 routes = web.RouteTableDef()
@@ -111,6 +136,8 @@ app.on_startup.append(lambda app: dqueue.initialize())
 
 @routes.post(config.URL_PREFIX + 'add')
 async def add(request):
+    if 'user' not in request:
+        return web.json_response({'error': 'Non autorisé'}, status=401)
     post = await request.json()
     url = post.get('url')
     quality = post.get('quality')
@@ -129,6 +156,8 @@ async def add(request):
 
 @routes.post(config.URL_PREFIX + 'delete')
 async def delete(request):
+    if 'user' not in request:
+        return web.json_response({'error': 'Non autorisé'}, status=401)
     post = await request.json()
     ids = post.get('ids')
     where = post.get('where')
@@ -139,6 +168,8 @@ async def delete(request):
 
 @routes.post(config.URL_PREFIX + 'start')
 async def start(request):
+    if 'user' not in request:
+        return web.json_response({'error': 'Non autorisé'}, status=401)
     post = await request.json()
     ids = post.get('ids')
     status = await dqueue.start_pending(ids)
@@ -146,6 +177,8 @@ async def start(request):
 
 @routes.get(config.URL_PREFIX + 'history')
 async def history(request):
+    if 'user' not in request:
+        return web.json_response({'error': 'Non autorisé'}, status=401)
     history = { 'done': [], 'queue': []}
 
     for _ ,v in dqueue.queue.saved_items():
@@ -166,7 +199,6 @@ def get_custom_dirs():
     def recursive_dirs(base):
         path = pathlib.Path(base)
 
-        # Converts PosixPath object to string, and remove base/ prefix
         def convert(p):
             s = str(p)
             if s.startswith(base):
@@ -177,7 +209,6 @@ def get_custom_dirs():
 
             return s
 
-        # Recursively lists all subdirectories of DOWNLOAD_DIR
         dirs = list(filter(None, map(convert, path.glob('**'))))
 
         return dirs
@@ -219,21 +250,17 @@ except ValueError as e:
         raise RuntimeError('Could not find the frontend UI static assets. Please run `node_modules/.bin/ng build` inside the ui folder') from e
     raise e
 
-# https://github.com/aio-libs/aiohttp/pull/4615 waiting for release
-# @routes.options(config.URL_PREFIX + 'add')
 async def add_cors(request):
     return web.Response(text=serializer.encode({"status": "ok"}))
 
 app.router.add_route('OPTIONS', config.URL_PREFIX + 'add', add_cors)
 
-
 async def on_prepare(request, response):
     if 'Origin' in request.headers:
         response.headers['Access-Control-Allow-Origin'] = request.headers['Origin']
-        response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
 
 app.on_response_prepare.append(on_prepare)
-
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.DEBUG)
