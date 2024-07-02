@@ -235,7 +235,7 @@ export class AppComponent implements OnInit, AfterViewInit {
   retryDownload(key: string, download: Download) {
     this.downloads.delById('done', [key]).subscribe({
       next: () => {
-        this.addDownload(download.url, download.quality, download.format, download.folder, download.customNamePrefix, true);
+        this.addDownload(download.url, download.quality, download.format, download.folder, download.custom_name_prefix, true);
       }
     });
   }
@@ -271,13 +271,13 @@ export class AppComponent implements OnInit, AfterViewInit {
   }
 
   clearFailedDownloads() {
-    const failedKeys: string[] = Array.from(this.downloads.done.values()).filter(download => download.status === 'error').map(download => download.key);
+    const failedKeys: string[] = Array.from(this.downloads.done.values()).filter(download => download.status === 'error').map(download => download.id);
     this.downloads.delById('done', failedKeys).subscribe();
   }
 
   retryFailedDownloads() {
     const failedDownloads: Download[] = Array.from(this.downloads.done.values()).filter(download => download.status === 'error');
-    failedDownloads.forEach(download => this.retryDownload(download.key, download));
+    failedDownloads.forEach(download => this.retryDownload(download.id, download));
   }
 
   identifyDownloadRow(index: number, download: KeyValue<string, Download>): string {
