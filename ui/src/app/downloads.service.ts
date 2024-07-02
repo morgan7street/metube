@@ -96,7 +96,7 @@ export class DownloadsService {
 
   handleHTTPError(error: HttpErrorResponse) {
     var msg = error.error instanceof ErrorEvent ? error.error.message : error.error;
-    return of({status: 'error', msg: msg})
+    return of({status: 'error', msg: msg});
   }
 
   public add(url: string, quality: string, format: string, folder: string, customNamePrefix: string, autoStart: boolean) {
@@ -118,5 +118,9 @@ export class DownloadsService {
     let ids: string[] = [];
     this[where].forEach((dl: Download) => { if (filter(dl)) ids.push(dl.url) });
     return this.delById(where, ids);
+  }
+
+  public delAllByStatus(status: string): Observable<void> {
+    return this.http.delete<void>(`/api/downloads/status/${status}`);
   }
 }
