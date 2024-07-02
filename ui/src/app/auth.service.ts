@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable, of } from 'rxjs';
-import { catchError, tap } from 'rxjs/operators';
+import { catchError, tap, map } from 'rxjs/operators';
 
 @Injectable({
   providedIn: 'root'
@@ -26,8 +26,12 @@ export class AuthService {
     return this.loggedIn;
   }
 
+  getToken(): string | null {
+    return localStorage.getItem(this.tokenKey);
+  }
+
   verifyToken(): Observable<boolean> {
-    const token = localStorage.getItem(this.tokenKey);
+    const token = this.getToken();
     if (!token) {
       return of(false);
     }
