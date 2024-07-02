@@ -123,4 +123,4 @@ export class DownloadsService {
   public delAllByStatus(status: string): Observable<void> {
     return this.http.delete<void>(`/api/downloads/status/${status}`);
   }
-}
+} 
