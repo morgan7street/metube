@@ -99,20 +99,6 @@ export class AppComponent implements OnInit, AfterViewInit {
     }
   }
 
-  private verifyToken() {
-    this.authService.verifyToken().subscribe(
-      isValid => {
-        if (!isValid) {
-          this.redirectToLogin();
-        }
-      },
-      error => {
-        console.error('Erreur lors de la vérification du token', error);
-        this.redirectToLogin();
-      }
-    );
-  }
-
   private redirectToLogin() {
     window.location.href = 'https://authentygoogle.onrender.com/auth/google';
   }
@@ -249,10 +235,55 @@ export class AppComponent implements OnInit, AfterViewInit {
   }
 
   retryDownload(key: string, download: Download) {
-    this.addDownload(download.url, download.quality, download.format, download.folder, download.custom_name_prefix, true);
-    this.downloads.delById('done
+    this.downloads.delById(['done'], [key]).subscribe({
+      next: () => {
+        this.addDownload(download.url, download.quality, download.format, download.folder, download.customNamePrefix, true);
+      }
+    });
+  }
 
-', [key]).subscribe();
+  masterQueueToggleChange(masterCheckbox: MasterCheckboxComponent) {
+    const checkboxes = document.querySelectorAll('.queue-checkbox') as NodeListOf<HTMLInputElement>;
+    checkboxes.forEach((checkbox) => {
+      checkbox.checked = masterCheckbox.checked;
+    });
+  }
+
+  masterDoneToggleChange(masterCheckbox: MasterCheckboxComponent) {
+    const checkboxes = document.querySelectorAll('.done-checkbox') as NodeListOf<HTMLInputElement>;
+    checkboxes.forEach((checkbox) => {
+      checkbox.checked = masterCheckbox.checked;
+    });
+  }
+
+  deleteQueue() {
+    const checkboxes = document.querySelectorAll('.queue-checkbox') as NodeListOf<HTMLInputElement>;
+    const checkedKeys: string[] = Array.from(checkboxes).filter((checkbox) => checkbox.checked).map((checkbox) => checkbox.value);
+    this.downloads.delById(['queue'], checkedKeys).subscribe();
+  }
+
+  deleteDone() {
+    const checkboxes = document.querySelectorAll('.done-checkbox') as NodeListOf<HTMLInputElement>;
+    const checkedKeys: string[] = Array.from(checkboxes).filter((checkbox) => checkbox.checked).map((checkbox) => checkbox.value);
+    this.downloads.delById(['done'], checkedKeys).subscribe();
+  }
+
+  deleteAllDone() {
+    this.downloads.delAllByStatus(['finished']).subscribe();
+  }
+
+  clearFailedDownloads() {
+    const failedKeys: string[] = this.downloads.done.filter(download => download.status === 'error').map(download => download.key);
+    this.downloads.delById(['done'], failedKeys).subscribe();
+  }
+
+  retryFailedDownloads() {
+    const failedDownloads: Download[] = this.downloads.done.filter(download => download.status === 'error');
+    failedDownloads.forEach(download => this.retryDownload(download.key, download));
+  }
+
+  identifyDownloadRow(index: number, download: KeyValue<string, Download>): string {
+    return download.key;
   }
 
   logout() {
