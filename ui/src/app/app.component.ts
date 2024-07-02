@@ -92,11 +92,10 @@ export class AppComponent implements OnInit, AfterViewInit {
     const token = urlParams.get('token');
     if (token) {
       this.authService.login(token);
-      this.router.navigate(['/'], { replaceUrl: true });
+      // Nettoyer l'URL après avoir récupéré le token
+      window.history.replaceState({}, document.title, window.location.pathname);
     } else if (!this.authService.isLoggedIn()) {
       this.redirectToLogin();
-    } else {
-      this.verifyToken();
     }
   }
 
@@ -119,14 +118,17 @@ export class AppComponent implements OnInit, AfterViewInit {
   }
 
   private initializeApp() {
-    this.customDirs$ = this.getMatchingCustomDir();
-    this.setTheme(this.activeTheme);
+    // Initialisation de l'application seulement si l'utilisateur est authentifié
+    if (this.authService.isLoggedIn()) {
+      this.customDirs$ = this.getMatchingCustomDir();
+      this.setTheme(this.activeTheme);
 
-    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-      if (this.activeTheme.id === 'auto') {
-         this.setTheme(this.activeTheme);
-      }
-    });
+      window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+        if (this.activeTheme.id === 'auto') {
+           this.setTheme(this.activeTheme);
+        }
+      });
+    }
   }
 
   asIsOrder(a, b) {
@@ -248,48 +250,11 @@ export class AppComponent implements OnInit, AfterViewInit {
 
   retryDownload(key: string, download: Download) {
     this.addDownload(download.url, download.quality, download.format, download.folder, download.custom_name_prefix, true);
-    this.downloads.delById('done', [key]).subscribe();
+    this.downloads.delById('done
+
+', [key]).subscribe();
   }
 
-  delDownload(where: string, id: string) {
-    this.downloads.delById(where, [id]).subscribe();
-  }
-
-  delSelectedDownloads(where: string) {
-    this.downloads.delByFilter(where, dl => dl.checked).subscribe();
-  }
-
-  clearCompletedDownloads() {
-    this.downloads.delByFilter('done', dl => dl.status === 'finished').subscribe();
-  }
-
-  clearFailedDownloads() {
-    this.downloads.delByFilter('done', dl => dl.status === 'error').subscribe();
-  }
-
-  retryFailedDownloads() {
-    this.downloads.done.forEach((dl, key) => {
-      if (dl.status === 'error') {
-        this.retryDownload(key, dl);
-      }
-    });
-  }
-
-  buildDownloadLink(download: Download) {
-    let baseDir = this.downloads.configuration["PUBLIC_HOST_URL"];
-    if (download.quality == 'audio' || download.filename.endsWith('.mp3')) {
-      baseDir = this.downloads.configuration["PUBLIC_HOST_AUDIO_URL"];
-    }
-    if (download.folder) {
-      baseDir += download.folder + '/';
-    }
-    return baseDir + encodeURIComponent(download.filename);
-  }
-
-  identifyDownloadRow(index: number, row: KeyValue<string, Download>) {
-    return row.key;
-  }
-  
   logout() {
     this.authService.logout();
     this.redirectToLogin();
