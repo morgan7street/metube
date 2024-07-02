@@ -5,6 +5,7 @@ import { faTrashAlt, faCheckCircle, faTimesCircle, IconDefinition } from '@forta
 import { faRedoAlt, faSun, faMoon, faCircleHalfStroke, faCheck, faExternalLinkAlt, faDownload } from '@fortawesome/free-solid-svg-icons';
 import { CookieService } from 'ngx-cookie-service';
 import { map, Observable, of } from 'rxjs';
+import { catchError, tap } from 'rxjs/operators';
 
 import { Download, DownloadsService, Status } from './downloads.service';
 import { MasterCheckboxComponent } from './master-checkbox.component';
@@ -223,19 +224,16 @@ export class AppComponent implements OnInit, AfterViewInit {
           console.error('Authentication error', error);
           this.redirectToLogin();
         } else {
-          alert(`Error adding URL: ${error.message}`);
+          console.error('Error adding download', error);
+          alert('Error adding URL: ' + error.message);
         }
         this.addInProgress = false;
       }
     });
   }
 
-  downloadItemByKey(id: string) {
-    this.downloads.startById([id]).subscribe();
-  }
-
   retryDownload(key: string, download: Download) {
-    this.downloads.delById(['done'], [key]).subscribe({
+    this.downloads.delById('done', [key]).subscribe({
       next: () => {
         this.addDownload(download.url, download.quality, download.format, download.folder, download.customNamePrefix, true);
       }
@@ -259,26 +257,26 @@ export class AppComponent implements OnInit, AfterViewInit {
   deleteQueue() {
     const checkboxes = document.querySelectorAll('.queue-checkbox') as NodeListOf<HTMLInputElement>;
     const checkedKeys: string[] = Array.from(checkboxes).filter((checkbox) => checkbox.checked).map((checkbox) => checkbox.value);
-    this.downloads.delById(['queue'], checkedKeys).subscribe();
+    this.downloads.delById('queue', checkedKeys).subscribe();
   }
 
   deleteDone() {
     const checkboxes = document.querySelectorAll('.done-checkbox') as NodeListOf<HTMLInputElement>;
     const checkedKeys: string[] = Array.from(checkboxes).filter((checkbox) => checkbox.checked).map((checkbox) => checkbox.value);
-    this.downloads.delById(['done'], checkedKeys).subscribe();
+    this.downloads.delById('done', checkedKeys).subscribe();
   }
 
   deleteAllDone() {
-    this.downloads.delAllByStatus(['finished']).subscribe();
+    this.downloads.delAllByStatus('finished').subscribe();
   }
 
   clearFailedDownloads() {
-    const failedKeys: string[] = this.downloads.done.filter(download => download.status === 'error').map(download => download.key);
-    this.downloads.delById(['done'], failedKeys).subscribe();
+    const failedKeys: string[] = Array.from(this.downloads.done.values()).filter(download => download.status === 'error').map(download => download.key);
+    this.downloads.delById('done', failedKeys).subscribe();
   }
 
   retryFailedDownloads() {
-    const failedDownloads: Download[] = this.downloads.done.filter(download => download.status === 'error');
+    const failedDownloads: Download[] = Array.from(this.downloads.done.values()).filter(download => download.status === 'error');
     failedDownloads.forEach(download => this.retryDownload(download.key, download));
   }
 
