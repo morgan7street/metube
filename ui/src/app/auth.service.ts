@@ -1,46 +1,126 @@
 import { Injectable } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
-import { Observable, of } from 'rxjs';
-import { catchError, tap, map } from 'rxjs/operators';
+import { HttpClient, HttpErrorResponse } from '@angular/common/http';
+import { Observable, of, Subject } from 'rxjs';
+import { catchError } from 'rxjs/operators';
+import { MeTubeSocket } from './metube-socket';
+
+export interface Status {
+  status: string;
+  msg?: string;
+}
+
+export interface Download {
+  id: string;
+  title: string;
+  url: string;
+  quality: string;
+  format: string;
+  folder: string;
+  custom_name_prefix: string;
+  status: string;
+  msg: string;
+  percent: number;
+  speed: number;
+  eta: number;
+  filename: string;
+  checked?: boolean;
+  deleting?: boolean;
+}
 
 @Injectable({
   providedIn: 'root'
 })
-export class AuthService {
-  private tokenKey = 'auth_token';
-  private loggedIn = false;
+export class DownloadsService {
+  loading = true;
+  queue = new Map<string, Download>();
+  done = new Map<string, Download>();
+  queueChanged = new Subject();
+  doneChanged = new Subject();
+  customDirsChanged = new Subject();
 
-  constructor(private http: HttpClient) {}
+  configuration = {};
+  customDirs = {};
 
-  login(token: string) {
-    localStorage.setItem(this.tokenKey, token);
-    this.loggedIn = true;
+  constructor(private http: HttpClient, private socket: MeTubeSocket) {
+    socket.fromEvent('all').subscribe((strdata: string) => {
+      this.loading = false;
+      let data: [[[string, Download]], [[string, Download]]] = JSON.parse(strdata);
+      this.queue.clear();
+      data[0].forEach(entry => this.queue.set(...entry));
+      this.done.clear();
+      data[1].forEach(entry => this.done.set(...entry));
+      this.queueChanged.next(null);
+      this.doneChanged.next(null);
+    });
+    socket.fromEvent('added').subscribe((strdata: string) => {
+      let data: Download = JSON.parse(strdata);
+      this.queue.set(data.url, data);
+      this.queueChanged.next(null);
+    });
+    socket.fromEvent('updated').subscribe((strdata: string) => {
+      let data: Download = JSON.parse(strdata);
+      let dl: Download = this.queue.get(data.url);
+      data.checked = dl.checked;
+      data.deleting = dl.deleting;
+      this.queue.set(data.url, data);
+    });
+    socket.fromEvent('completed').subscribe((strdata: string) => {
+      let data: Download = JSON.parse(strdata);
+      this.queue.delete(data.url);
+      this.done.set(data.url, data);
+      this.queueChanged.next(null);
+      this.doneChanged.next(null);
+    });
+    socket.fromEvent('canceled').subscribe((strdata: string) => {
+      let data: string = JSON.parse(strdata);
+      this.queue.delete(data);
+      this.queueChanged.next(null);
+    });
+    socket.fromEvent('cleared').subscribe((strdata: string) => {
+      let data: string = JSON.parse(strdata);
+      this.done.delete(data);
+      this.doneChanged.next(null);
+    });
+    socket.fromEvent('configuration').subscribe((strdata: string) => {
+      let data = JSON.parse(strdata);
+      console.debug("got configuration:", data);
+      this.configuration = data;
+    });
+    socket.fromEvent('custom_dirs').subscribe((strdata: string) => {
+      let data = JSON.parse(strdata);
+      console.debug("got custom_dirs:", data);
+      this.customDirs = data;
+      this.customDirsChanged.next(data);
+    });
   }
 
-  logout() {
-    localStorage.removeItem(this.tokenKey);
-    this.loggedIn = false;
+  handleHTTPError(error: HttpErrorResponse) {
+    var msg = error.error instanceof ErrorEvent ? error.error.message : error.error;
+    return of({status: 'error', msg: msg});
   }
 
-  isLoggedIn(): boolean {
-    return this.loggedIn;
-  }
-
-  getToken(): string | null {
-    return localStorage.getItem(this.tokenKey);
-  }
-
-  verifyToken(): Observable<boolean> {
-    const token = this.getToken();
-    if (!token) {
-      return of(false);
-    }
-    return this.http.post<{ valid: boolean }>('/api/verify-token', { token }).pipe(
-      tap(response => {
-        this.loggedIn = response.valid;
-      }),
-      map(response => response.valid),
-      catchError(() => of(false))
+  public add(url: string, quality: string, format: string, folder: string, customNamePrefix: string, autoStart: boolean) {
+    return this.http.post<Status>('add', {url: url, quality: quality, format: format, folder: folder, custom_name_prefix: customNamePrefix, auto_start: autoStart}).pipe(
+      catchError(this.handleHTTPError)
     );
+  }
+
+  public startById(ids: string[]) {
+    return this.http.post('start', {ids: ids});
+  }
+
+  public delById(where: string, ids: string[]) {
+    ids.forEach(id => this[where].get(id).deleting = true);
+    return this.http.post('delete', {where: where, ids: ids});
+  }
+
+  public delByFilter(where: string, filter: (dl: Download) => boolean) {
+    let ids: string[] = [];
+    this[where].forEach((dl: Download) => { if (filter(dl)) ids.push(dl.url) });
+    return this.delById(where, ids);
+  }
+
+  public delAllByStatus(status: string): Observable<void> {
+    return this.http.delete<void>(`/api/downloads/status/${status}`);
   }
 }
