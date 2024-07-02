@@ -1,22 +1,42 @@
 import { Injectable } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { Observable, of } from 'rxjs';
+import { catchError, tap } from 'rxjs/operators';
 
 @Injectable({
   providedIn: 'root'
 })
 export class AuthService {
+  private tokenKey = 'auth_token';
+  private loggedIn = false;
+
+  constructor(private http: HttpClient) {}
+
   login(token: string) {
-    localStorage.setItem('auth_token', token);
+    localStorage.setItem(this.tokenKey, token);
+    this.loggedIn = true;
   }
 
   logout() {
-    localStorage.removeItem('auth_token');
+    localStorage.removeItem(this.tokenKey);
+    this.loggedIn = false;
   }
 
   isLoggedIn(): boolean {
-    return !!localStorage.getItem('auth_token');
+    return this.loggedIn;
   }
 
-  getToken(): string | null {
-    return localStorage.getItem('auth_token');
+  verifyToken(): Observable<boolean> {
+    const token = localStorage.getItem(this.tokenKey);
+    if (!token) {
+      return of(false);
+    }
+    return this.http.post<{ valid: boolean }>('/api/verify-token', { token }).pipe(
+      tap(response => {
+        this.loggedIn = response.valid;
+      }),
+      map(response => response.valid),
+      catchError(() => of(false))
+    );
   }
 }
